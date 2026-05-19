@@ -1,0 +1,352 @@
+\documentclass{article}
+\usepackage{graphicx} % Required for inserting images
+
+\usepackage[margin=1in]{geometry}
+
+\usepackage{amsmath}
+\usepackage{amsthm}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+
+\input{math}
+
+\title{LEO Time-Scale Separation}
+\author{Priyank Behera \and Aditya S. Gopalan \and Harsha Honnappa}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+
+\section{Model}
+For the moment, we will make the simplifying assumption that the catastrophic collision of an intact satellite only produces one debris fragment.
+
+There are 5 contributions to our dynamics, which can be expressed as a chemical reaction network:
+\begin{align}
+    \emptyset &\xrightarrow{\kappa_1} I 
+    \label{eq:rxn1}
+    \\
+    2I &\xrightarrow{\kappa_2} 2F
+    \label{eq:rxn2}
+    \\
+    I + F &\xrightarrow{\kappa_3} 2F
+    \label{eq:rxn3}
+    \\
+    I &\xrightarrow{\kappa_4} \emptyset
+    \label{eq:rxn4}
+    \\
+    F &\xrightarrow{\kappa_5} \emptyset
+    \label{eq:rxn5}
+\end{align}
+
+The corresponding input vectors are:
+\begin{itemize}
+    \item $\nu_1 := (0, 0)$,
+    \item $\nu_2 := (2, 0)$,
+    \item $\nu_3 := (1, 1)$,
+    \item $\nu_4 := (1, 0)$,
+    \item $\nu_5 := (0, 1)$;
+\end{itemize}
+and the corresponding net-change vectors are:
+\begin{itemize}
+    \item $\zeta_1 := (1, 0)$,
+    \item $\zeta_2 := (-2, 2)$,
+    \item $\zeta_3 := (-1, 1)$,
+    \item $\zeta_4 := (-1, 0)$,
+    \item $\zeta_5 := (0, -1)$.
+\end{itemize}
+
+Let $X(t) := (X_I(t), X_F(t))$ be the counts of intacts ($I$) and fragments ($F$).
+Suppose that the \emph{abundances} $\alpha_I, \alpha_F$ of $I$ and $F$, respectively, are such that $N^{-\alpha_I}X_I(t) = O(1)$ and $N^{-\alpha_F}X_F(t) = O(1)$.
+We will put $\alpha := (\alpha_I, \alpha_F)$.
+Let $\beta_1, \ldots, \beta_5$ be such that $N^{\beta_i}\kappa_i = O(1)$, for $i = 1, \ldots,  5$.
+Set $\rho_k := \beta_k + \alpha\cdot\nu_k$, for $k = 1, \ldots, 5$
+
+The system dynamics are as follows:
+Let $Y_1,\ldots,Y_5$ be independent unit-rate Poisson processes. Then
+\begin{align*}
+X_I(t)
+&=X_I(0)
++Y_1\!\left(\kappa_1 t\right) \\
+&\quad
+-2Y_2\!\left(\int_0^t \kappa_2 X_I(s)\bigl(X_I(s)-1\bigr)\,ds\right) \\
+&\quad
+-Y_3\!\left(\int_0^t \kappa_3 X_I(s)X_F(s)\,ds\right)
+-Y_4\!\left(\int_0^t \kappa_4 X_I(s)\,ds\right),
+\\[1em]
+X_F(t)
+&=X_F(0)
++2Y_2\!\left(\int_0^t \kappa_2 X_I(s)\bigl(X_I(s)-1\bigr)\,ds\right) \\
+&\quad
++Y_3\!\left(\int_0^t \kappa_3 X_I(s)X_F(s)\,ds\right)
+-Y_5\!\left(\int_0^t \kappa_5 X_F(s)\,ds\right).
+\end{align*}
+
+Define the scaled variables
+\[
+Z_I^N(t):=N^{-\alpha_I}X_I(t),
+\qquad
+Z_F^N(t):=N^{-\alpha_F}X_F(t).
+\]
+We get the re-scaled system dynamics:
+\begin{align*}
+Z_I^N(t)
+&=Z_I^N(0)
++N^{-\alpha_I}
+Y_1\!\left(
+N^{\beta_1}\kappa_1^N t
+\right) \\
+&\quad
+-2N^{-\alpha_I}
+Y_2\!\left(
+N^{\beta_2+2\alpha_I}\kappa_2^N
+\int_0^t Z_I^N(s)
+\left(Z_I^N(s)-N^{-\alpha_I}\right)\,ds
+\right) \\
+&\quad
+-N^{-\alpha_I}
+Y_3\!\left(
+N^{\beta_3+\alpha_I+\alpha_F}\kappa_3^N
+\int_0^t Z_I^N(s)Z_F^N(s)\,ds
+\right) \\
+&\quad
+-N^{-\alpha_I}
+Y_4\!\left(
+N^{\beta_4+\alpha_I}\kappa_4^N
+\int_0^t Z_I^N(s)\,ds
+\right),
+\\[1em]
+Z_F^N(t)
+&=Z_F^N(0)
++2N^{-\alpha_F}
+Y_2\!\left(
+N^{\beta_2+2\alpha_I}\kappa_2^N
+\int_0^t Z_I^N(s)
+\left(Z_I^N(s)-N^{-\alpha_I}\right)\,ds
+\right) \\
+&\quad
++N^{-\alpha_F}
+Y_3\!\left(
+N^{\beta_3+\alpha_I+\alpha_F}\kappa_3^N
+\int_0^t Z_I^N(s)Z_F^N(s)\,ds
+\right) \\
+&\quad
+-N^{-\alpha_F}
+Y_5\!\left(
+N^{\beta_5+\alpha_F}\kappa_5^N
+\int_0^t Z_F^N(s)\,ds
+\right).
+\end{align*}
+
+In order to see the separation of time-scales, define, for $\gamma \geq 0$, 
+\begin{align*}
+Z_I^{N, \gamma}(t)
+&=Z_I^N(0)
++N^{-\alpha_I}
+Y_1\!\left(N^\gamma
+N^{\beta_1}\kappa_1^N t
+\right) \\
+&\quad
+-2N^{-\alpha_I}
+Y_2\!\left(N^\gamma
+N^{\beta_2+2\alpha_I}\kappa_2^N
+\int_0^t Z_I^N(s)
+\left(Z_I^N(s)-N^{-\alpha_I}\right)\,ds
+\right) \\
+&\quad
+-N^{-\alpha_I}
+Y_3\!\left(N^\gamma
+N^{\beta_3+\alpha_I+\alpha_F}\kappa_3^N
+\int_0^t Z_I^N(s)Z_F^N(s)\,ds
+\right) \\
+&\quad
+-N^{-\alpha_I}
+Y_4\!\left(N^\gamma
+N^{\beta_4+\alpha_I}\kappa_4^N
+\int_0^t Z_I^N(s)\,ds
+\right),
+\\[1em]
+Z_F^{N, \gamma}(t)
+&=Z_F^N(0)
++2N^{-\alpha_F}
+Y_2\!\left(N^\gamma
+N^{\beta_2+2\alpha_I}\kappa_2^N
+\int_0^t Z_I^N(s)
+\left(Z_I^N(s)-N^{-\alpha_I}\right)\,ds
+\right) \\
+&\quad
++N^{-\alpha_F}
+Y_3\!\left(N^\gamma
+N^{\beta_3+\alpha_I+\alpha_F}\kappa_3^N
+\int_0^t Z_I^N(s)Z_F^N(s)\,ds
+\right) \\
+&\quad
+-N^{-\alpha_F}
+Y_5\!\left(N^\gamma
+N^{\beta_5+\alpha_F}\kappa_5^N
+\int_0^t Z_F^N(s)\,ds
+\right).
+\end{align*}
+
+
+\subsection{Species and Reaction Balance}
+First, we will balance each of the species $I$ and $F$.
+This corresponds to a notion of \emph{heavy traffic}, in which the abundances of intacts and fragments remain of the same orders over time.
+Heavy traffic is a natural assumption for the efficient use of LEO.
+This will allow us to see time-scale separation as an \emph{intrinsic} behavior in the model, as opposed to seeing it \emph{extrinsically} through the use of, \textit{e.g.} a limit of diminishing volume shells.
+
+Notice that intacts are only created by reaction~\eqref{eq:rxn1}, and they are removed by reactions~\eqref{eq:rxn2},~\eqref{eq:rxn3},~\eqref{eq:rxn4}.
+We require:
+\[\rho_1 = \max(\rho_2, \rho_3, \rho_4).\]
+We get a natural time-scale $\gamma_I$ for the intact population via:
+\[0 \leq \gamma_I := \alpha_I - \max(\rho_1, \rho_2, \rho_3, \rho_4).\]
+
+Similarly, fragments are created by reactions~\eqref{eq:rxn2},~\eqref{eq:rxn3} and are removed only by reaction~\eqref{eq:rxn5}.
+We require:
+\[\rho_5 = \max(\rho_2, \rho_3).\]
+We get a natural time-scale for the fragment population via:
+\[0 \leq \gamma_F :- \alpha_F - \max(\rho_2, \rho_3, \rho_5).\]
+
+For technical reasons, we will also require:
+\[\max(\gamma_I, \gamma_F) \leq \max(\alpha_I, \alpha_F) - \max_{i \in \{1, \ldots, 4\}}\rho_k.\]
+
+\subsection{Model Assumptions}
+We make the following modeling assumptions.
+
+First, we assume that the balance for intacts is due to de-orbiting, and \emph{not} due to catastrophic collision.
+That is, reaction~\eqref{eq:rxn1} is balanced by reaction~\eqref{eq:rxn4}.
+Next, we assume that the removal of fragments in reaction~\eqref{eq:rxn5} is balanced by their creation due to catastrophic collisions of intacts with fragments in reaction~\eqref{eq:rxn3} (that is, intact-intact catastrophic collisions are very rare compared to intact-fragment catastrophic collisions).
+
+From these, we get the following:
+\begin{itemize}
+    \item $\beta_1 = \beta_4 + \alpha_I$,
+    \item $\beta_1 > \beta_2 + 2\alpha_I$,
+    \item $\beta_1 > \beta_2 + \alpha_I + \alpha_F$,
+    \item $\beta_3 + \alpha_F > \beta_2 + \alpha_I$,
+    \item $\beta_5 = \beta_3 + \alpha_I$.
+\end{itemize}
+
+We make two final assumptions. 
+First, we assume that the abundance of fragments exceeds the abundance of intacts.
+Second, the life time of a fragment exceeds the lifetime of an intact.
+That is,
+\begin{itemize}
+    \item $\alpha_F > \alpha_I$,
+    \item $\beta_4 > \beta_5$.
+\end{itemize}
+
+%%******
+%%******
+%%******
+%%******
+%%******
+%%******
+
+\section{Numerical Experiments}
+Due to the fact that the time-scale separation is \emph{intrinsic}, there are multiple ways in which one can choose the parameters $\alpha_i, \beta_k$, even with the same numerical values for the (present) numbers of intacts and fragments and the rate constants $\kappa_k$, respectively.
+
+We give some numbers to work with.
+We denote by $N_0$ the \emph{reference system} through which we can determine the appropriate scaling rates.
+That is, we will take $N \to \infty$, but to determine the appropriate constants, we first fix some $N_0$ and then find the relevant time scales for the limit system.
+
+\begin{itemize}
+    \item $N_0^{\rho_1} := 100 \text{ per year}$,
+    \item $N_0^{\rho_2} := 3 \text{ per 20 years}$,
+    \item $N_0^{\rho_3} := 1 \text{ per 9 years}$,
+    \item $N_0^{\rho_4} := 1 \text{ per 5 years}$,
+    \item $N_0^{\rho_5} := 1 \text{ per 30 years}$ (this is an approximation since the debris lifetimes can be as small as a few years around $500 \text{ km}$ and as large as a century around $750 \text{ km}$).
+\end{itemize}
+
+We have (approximately), in the $550 \text{ km} - 750\text{ km}$ shell, 
+\begin{itemize}
+    \item $10000 \text{ intacts}$,
+    \item $500,000 \text{ fragments greater than $1$ cm}$.
+\end{itemize}
+For the reference system, we will take $N_0 = 10000$ to match the intact population.
+
+\subsection{Experiment 1}
+Choose $\alpha_I = 4$ and $\alpha_F = 6$.
+The scaling exponents are
+\[\rho_1 = 0.5, \quad \rho_2 \approx -0.206, \quad \rho_3 \approx -0.239, \quad \rho_4 \approx -0.175, \quad \rho_5 \approx -0.369,\]
+giving time-scales $\gamma_I = \alpha_I - \rho_1 = 3.5$ and $\gamma_F = \alpha_F - \rho_5 \approx 6.37$.
+
+Figure~\ref{fig:exp1_physical} shows the physical system trajectories at $N_0 = 10^4$, with Gillespie stochastic trajectories overlaid on the deterministic ODE solution.
+Figures~\ref{fig:exp1_gammaI} and~\ref{fig:exp1_gammaF} show the scaled variables $Z_I^{N,\gamma}, Z_F^{N,\gamma}$ at the intact and fragment time-scales, respectively.
+Figure~\ref{fig:exp1_convergence} shows the convergence of the scaled trajectories across $N \in \{10^4, 2\times 10^4, 5\times 10^4\}$.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/exp1_physical.png}
+    \caption{Experiment~1: Physical system trajectories $(X_I(t), X_F(t))$ at $N_0 = 10^4$. Blue: ODE (deterministic fluid limit). Light traces: Gillespie SSA realizations.}
+    \label{fig:exp1_physical}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/exp1_scaled_gammaI.png}
+    \caption{Experiment~1: Scaled system $(Z_I^{N,\gamma_I}, Z_F^{N,\gamma_I})$ at the intact time-scale $\gamma_I = 3.5$.}
+    \label{fig:exp1_gammaI}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/exp1_scaled_gammaF.png}
+    \caption{Experiment~1: Scaled system $(Z_I^{N,\gamma_F}, Z_F^{N,\gamma_F})$ at the fragment time-scale $\gamma_F \approx 6.37$.}
+    \label{fig:exp1_gammaF}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/exp1_convergence.png}
+    \caption{Experiment~1: Convergence of scaled trajectories across $N$ values. As $N$ increases, the scaled variables $Z_I, Z_F \to 0$, reflecting that $\alpha_I = 4$ and $\alpha_F = 6$ exceed the natural abundances of the reference system.}
+    \label{fig:exp1_convergence}
+\end{figure}
+
+\subsection{Experiment 2}
+Choose $\alpha_I = 0$ and $\alpha_F = \frac32$.
+The time-scales are $\gamma_I = \alpha_I - \rho_1 = -0.5$ and $\gamma_F = \alpha_F - \rho_5 \approx 1.87$.
+Note that $\gamma_I < 0$, which indicates that the balance condition $\alpha_I \geq \rho_1$ is not satisfied for this choice of $\alpha_I$.
+
+Figure~\ref{fig:exp2_physical} shows the physical system trajectories.
+Figures~\ref{fig:exp2_gammaI} and~\ref{fig:exp2_gammaF} show the scaled variables at the intact and fragment time-scales.
+Figure~\ref{fig:exp2_convergence} shows the multi-$N$ convergence.
+Figure~\ref{fig:exp2_kessler} shows the Kessler threshold: the critical intact count $X_I^{\mathrm{crit}} = \kappa_5/\kappa_3 = 3000$ above which fragments grow unboundedly.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/exp2_physical.png}
+    \caption{Experiment~2: Physical system trajectories $(X_I(t), X_F(t))$ at $N_0 = 10^4$.}
+    \label{fig:exp2_physical}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/exp2_scaled_gammaI.png}
+    \caption{Experiment~2: Scaled system at the intact time-scale $\gamma_I = -0.5$. Since $\alpha_I = 0$, $Z_I = X_I$.}
+    \label{fig:exp2_gammaI}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/exp2_scaled_gammaF.png}
+    \caption{Experiment~2: Scaled system at the fragment time-scale $\gamma_F \approx 1.87$.}
+    \label{fig:exp2_gammaF}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/exp2_convergence.png}
+    \caption{Experiment~2: Convergence of scaled trajectories across $N \in \{10^3, 5\times 10^3, 10^4, 5\times 10^4\}$.}
+    \label{fig:exp2_convergence}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=0.85\textwidth]{figures/exp2_kessler.png}
+    \caption{Kessler threshold: $X_I^{\mathrm{crit}} = \kappa_5/\kappa_3 = 3000$. Since $X_I(0) = 10^4 > X_I^{\mathrm{crit}}$, fragments grow throughout the simulation.}
+    \label{fig:exp2_kessler}
+\end{figure}
+
+\end{document}
