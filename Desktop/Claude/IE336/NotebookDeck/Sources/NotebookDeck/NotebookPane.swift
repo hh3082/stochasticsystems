@@ -100,7 +100,7 @@ struct NotebookPane: View {
                 .font(.system(size: 11, design: .monospaced))
                 .onSubmit { state.loadNotebookURL(urlText) }
             if state.busy { ProgressView().controlSize(.small) }
-            Text(state.ollamaStatus.isEmpty ? state.serverStatus : state.serverStatus + "  ·  " + state.ollamaStatus)
+            Text([state.serverStatus, state.depsStatus, state.ollamaStatus].filter { !$0.isEmpty }.joined(separator: "  ·  "))
                 .font(.caption).foregroundStyle(.secondary).lineLimit(1)
         }
         .padding(.horizontal, 8).padding(.vertical, 5)
@@ -110,7 +110,7 @@ struct NotebookPane: View {
     private var placeholder: some View {
         VStack(spacing: 12) {
             Image(systemName: "doc.text.magnifyingglass").font(.system(size: 44)).foregroundStyle(.secondary)
-            Text("Drop a .ipynb here, or open one").foregroundStyle(.secondary)
+            Text(state.busy ? "Starting JupyterLab…" : "Drop a .ipynb here, or open one").foregroundStyle(.secondary)
             HStack {
                 Button("Open Notebook…") { state.chooseNotebook() }.keyboardShortcut("o")
                 Button("Load URL…") { state.promptForURL() }

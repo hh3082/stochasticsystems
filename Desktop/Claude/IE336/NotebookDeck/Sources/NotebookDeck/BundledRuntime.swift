@@ -10,7 +10,6 @@ enum BundledRuntime {
     static let root: URL? = existing(Bundle.main.resourceURL?.appendingPathComponent("runtime", isDirectory: true))
     static let python: URL? = existing(root?.appendingPathComponent("python/bin/python3"))
     static let ollama: URL? = existing(root?.appendingPathComponent("ollama/ollama"))
-    static let ollamaModels: URL? = existing(root?.appendingPathComponent("models/ollama", isDirectory: true))
     static let hfHome: URL? = existing(root?.appendingPathComponent("models/hf", isDirectory: true))
     static let bundledNotebooks: URL? = existing(Bundle.main.resourceURL?.appendingPathComponent("notebooks", isDirectory: true))
 
@@ -24,21 +23,28 @@ enum BundledRuntime {
         return d
     }()
 
-    /// Where the shipped notebooks are copied so students can edit and save them.
+    /// Where the shipped notebooks are copied so students can edit and save them. Kept out of
+    /// ~/Documents so macOS never has to ask for folder access.
     static let userNotebooksDir: URL = fm.homeDirectoryForCurrentUser
+        .appendingPathComponent("NotebookDeck Notebooks", isDirectory: true)
+    private static let legacyNotebooksDir: URL = fm.homeDirectoryForCurrentUser
         .appendingPathComponent("Documents/NotebookDeck Notebooks", isDirectory: true)
 
-    /// Models the bundled Ollama store contains, as "name:tag".
-    static var bundledOllamaModels: [String] {
-        guard let m = ollamaModels else { return [] }
-        let lib = m.appendingPathComponent("manifests/registry.ollama.ai/library")
-        guard let names = try? fm.contentsOfDirectory(atPath: lib.path) else { return [] }
-        var out: [String] = []
-        for n in names.sorted() where !n.hasPrefix(".") {
-            let tags = (try? fm.contentsOfDirectory(atPath: lib.appendingPathComponent(n).path)) ?? []
-            out += tags.filter { !$0.hasPrefix(".") }.sorted().map { "\(n):\($0)" }
+    /// Moves a folder created by earlier versions in ~/Documents to the new location, once.
+    static func migrateNotebooksFolder() {
+        guard !fm.fileExists(atPath: userNotebooksDir.path), fm.fileExists(atPath: legacyNotebooksDir.path) else { return }
+        do {
+            try fm.moveItem(at: legacyNotebooksDir, to: userNotebooksDir)
+            AppLog.write("notebooks: moved \(legacyNotebooksDir.path) -> \(userNotebooksDir.path)")
+        } catch {
+            AppLog.write("notebooks: could not move legacy folder: \(error)")
         }
-        return out
+    }
+
+    /// A saved path under the old Documents folder, rewritten to the new one.
+    static func remapLegacyPath(_ path: String) -> String {
+        let old = legacyNotebooksDir.path
+        return path.hasPrefix(old + "/") ? userNotebooksDir.path + path.dropFirst(old.count) : path
     }
 
     static var bundledNotebookNames: [String] {
@@ -50,6 +56,7 @@ enum BundledRuntime {
     /// unless `overwrite` is set. Returns the directory.
     @discardableResult
     static func installNotebooks(overwrite: Bool) throws -> URL {
+        migrateNotebooksFolder()
         guard let src = bundledNotebooks else { return userNotebooksDir }
         try fm.createDirectory(at: userNotebooksDir, withIntermediateDirectories: true)
         for name in try fm.contentsOfDirectory(atPath: src.path) where !name.hasPrefix(".") {
@@ -62,6 +69,15 @@ enum BundledRuntime {
             try fm.copyItem(at: from, to: to)
         }
         return userNotebooksDir
+    }
+
+    /// Creates the writable Ollama store if needed. The app ships no Ollama models (build.sh
+    /// leaves Runtime/models/ollama out; the Models window downloads the course models), so
+    /// nothing is copied in, and an existing store, including one an earlier version seeded
+    /// with qwen2.5:0.5b and qwen2.5:3b, is used as it is.
+    static func prepareOllamaStore(_ store: URL) throws {
+        try fm.createDirectory(at: store, withIntermediateDirectories: true)
+        AppLog.write("ollama: no models are bundled; using the store at \(store.path) as it is")
     }
 
     /// Environment for the bundled Jupyter server (and, by inheritance, its kernels):

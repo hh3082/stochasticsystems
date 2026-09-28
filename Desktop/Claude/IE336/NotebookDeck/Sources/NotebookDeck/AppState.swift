@@ -51,13 +51,22 @@ final class AppState: ObservableObject {
     @Published var continuousSlides = false
     @Published var serverStatus = "No Jupyter server"
     @Published var ollamaStatus = ""
+    @Published var depsStatus = ""
+    private(set) var depsReport: JupyterServer.DependencyReport?
     @Published var busy = false
     @Published var errorMessage: String?
+    /// Set once the Models window has been opened at launch, so reopening the main window does not open it again.
+    var modelsWindowShownAtLaunch = false
 
     let web = WebController()
     let pdf = PDFController()
     let server = JupyterServer()
     let ollama = OllamaServer()
+    lazy var modelManager: ModelManager = {
+        let mm = ModelManager(server: ollama)
+        mm.onStatus = { [weak self] in self?.setOllamaStatus($0) }
+        return mm
+    }()
     private let defaults = UserDefaults.standard
 
     private init() {
@@ -75,11 +84,72 @@ final class AppState: ObservableObject {
         if deckURL == nil, let p = defaults.string(forKey: "deckFile"), FileManager.default.fileExists(atPath: p) {
             deckURL = URL(fileURLWithPath: p)
         }
+        BundledRuntime.migrateNotebooksFolder()
+        ensureOllama()
+        checkDependencies()
         guard notebookFile == nil, notebookURL == nil else { return }
-        if let p = defaults.string(forKey: "notebookFile"), FileManager.default.fileExists(atPath: p) {
+        if let saved = defaults.string(forKey: "notebookFile"),
+           case let p = BundledRuntime.remapLegacyPath(saved), FileManager.default.fileExists(atPath: p) {
             openNotebook(file: URL(fileURLWithPath: p))
         } else if let s = defaults.string(forKey: "notebookURL"), let u = URL(string: s) {
             notebookURL = u
+        } else {
+            openWorkspace()
+        }
+    }
+
+    /// Starts JupyterLab on the notebooks folder and shows its file browser, so the app is
+    /// ready to work the moment it opens even before a notebook is chosen.
+    func openWorkspace() {
+        let dir: URL
+        do { dir = try BundledRuntime.installNotebooks(overwrite: false) } catch {
+            errorMessage = "Could not prepare the notebooks folder: \(error.localizedDescription)"; return
+        }
+        notebookFile = nil
+        defaults.removeObject(forKey: "notebookFile")
+        defaults.removeObject(forKey: "notebookURL")
+        Task { await launch(root: dir, open: nil, restart: false) }
+    }
+
+    /// Imports every required package in the bundled Python, off the main thread.
+    func checkDependencies() {
+        depsStatus = "Checking Python…"
+        Task {
+            let report = await Task.detached { JupyterServer.checkDependencies() }.value
+            depsReport = report
+            depsStatus = report.summary
+            if !report.ok { errorMessage = "The Python environment is incomplete.\n\nMissing: \(report.missing.joined(separator: ", "))\n\nSee File > Show App Log." }
+        }
+    }
+
+    func showEnvironment() {
+        let r = depsReport
+        let alert = NSAlert()
+        alert.messageText = "Python environment"
+        var lines = ["Launcher: \(JupyterServer.resolveLauncher().map { "\($0.exe.path) [\($0.label)]" } ?? "none found")", ""]
+        if let r {
+            lines += JupyterServer.requiredModules.map { m in "\(m): \(r.versions[m] ?? "MISSING")" }
+        } else {
+            lines.append("Check still running.")
+        }
+        alert.informativeText = lines.joined(separator: "\n")
+        alert.addButton(withTitle: "OK")
+        alert.addButton(withTitle: "Full Audit…")
+        if alert.runModal() == .alertSecondButtonReturn { runFullAudit() }
+    }
+
+    /// Imports every installed package under an isolated interpreter (takes ~20 s).
+    func runFullAudit() {
+        busy = true
+        depsStatus = "Auditing every package…"
+        Task {
+            let text = await Task.detached { JupyterServer.fullAudit() }.value
+            busy = false
+            depsStatus = depsReport?.summary ?? ""
+            let alert = NSAlert()
+            alert.messageText = "Bundled runtime audit"
+            alert.informativeText = text
+            alert.runModal()
         }
     }
 
@@ -121,7 +191,17 @@ final class AppState: ObservableObject {
     func ensureOllama() {
         Task {
             ollamaStatus = "Ollama: starting…"
-            ollamaStatus = await ollama.ensureRunning()
+            setOllamaStatus(await ollama.status())
+        }
+    }
+
+    private var loggedOllamaStatus = ""
+    /// Shows `s` in the toolbar and logs it when it differs from the last status logged.
+    private func setOllamaStatus(_ s: String) {
+        ollamaStatus = s
+        if s != loggedOllamaStatus {
+            loggedOllamaStatus = s
+            AppLog.write("ollama: status: \(s)")
         }
     }
 
@@ -165,28 +245,36 @@ final class AppState: ObservableObject {
     }
 
     func restartServer() {
-        guard let f = notebookFile, f.pathExtension.lowercased() == "ipynb" else {
-            errorMessage = "Open a .ipynb first; the server is rooted at the notebook's folder."
-            return
+        if let f = notebookFile, f.pathExtension.lowercased() == "ipynb" {
+            Task { await launch(for: f, restart: true) }
+        } else if let root = server.rootDir {
+            Task { await launch(root: root, open: nil, restart: true) }
+        } else {
+            openWorkspace()
         }
-        Task { await launch(for: f, restart: true) }
     }
 
     private var launching: URL?
     private func launch(for file: URL, restart: Bool) async {
-        if !restart, server.serves(file), let u = server.url(for: file) {
-            notebookURL = u
+        await launch(root: file.deletingLastPathComponent(), open: file, restart: restart)
+    }
+
+    /// Starts (or reuses) the server rooted at `root` and shows `open`, or the file browser.
+    private func launch(root: URL, open file: URL?, restart: Bool) async {
+        let key = file ?? root
+        if !restart, server.isRunning, server.rootDir?.path == root.path || (file.map { server.serves($0) } ?? false) {
+            notebookURL = file.map { server.url(for: $0) } ?? server.labURL
             return
         }
-        if !restart, launching == file { return }   // already starting for this file
-        launching = file
+        if !restart, launching == key { return }   // already starting for this
+        launching = key
         defer { launching = nil }
         busy = true
         serverStatus = "Starting Jupyter…"
         defer { busy = false }
         do {
-            _ = try await server.start(rootDir: file.deletingLastPathComponent())
-            notebookURL = server.url(for: file)
+            _ = try await server.start(rootDir: root)
+            notebookURL = file.map { server.url(for: $0) } ?? server.labURL
             let kind: String
             switch server.frontend {
             case .lab: kind = "JupyterLab"

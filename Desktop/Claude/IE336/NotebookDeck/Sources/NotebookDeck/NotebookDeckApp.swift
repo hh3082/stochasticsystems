@@ -15,8 +15,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
+/// UserDefaults key for "Show this window when NotebookDeck opens" in the Models window (default on).
+enum LaunchPrefs {
+    static let showModelsWindow = "showModelsWindowAtLaunch"
+}
+
 struct ContentView: View {
     @EnvironmentObject var state: AppState
+    @Environment(\.openWindow) private var openWindow
+    @AppStorage(LaunchPrefs.showModelsWindow) private var showModelsAtLaunch = true
 
     var body: some View {
         Group {
@@ -27,7 +34,16 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 900, minHeight: 500)
-        .onAppear { state.restoreLastSession() }
+        .onAppear {
+            state.restoreLastSession()
+            // Students start by checking which course models are installed, so the Models window
+            // opens in front of the main window once per launch unless they turned that off.
+            if showModelsAtLaunch && !state.modelsWindowShownAtLaunch {
+                state.modelsWindowShownAtLaunch = true
+                openWindow(id: "models")
+                AppLog.write("models window: opened at launch")
+            }
+        }
         .alert("NotebookDeck", isPresented: Binding(
             get: { state.errorMessage != nil },
             set: { if !$0 { state.errorMessage = nil } })
@@ -54,6 +70,14 @@ struct ContentView: View {
     }
 }
 
+/// Menu item that opens the Models window; lives in a View so it can use openWindow.
+struct ManageModelsCommand: View {
+    @Environment(\.openWindow) private var openWindow
+    var body: some View {
+        Button("Manage Models…") { openWindow(id: "models") }.keyboardShortcut("m", modifiers: [.command, .shift])
+    }
+}
+
 @main
 struct NotebookDeckApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
@@ -65,10 +89,17 @@ struct NotebookDeckApp: App {
         }
         .defaultSize(width: 1600, height: 900)
         .commands {
+            CommandMenu("Models") {
+                ManageModelsCommand()
+                Divider()
+                Button("Restart Ollama") { state.restartOllama() }
+                Button("Show Ollama Log") { state.showOllamaLog() }
+            }
             CommandGroup(replacing: .newItem) {
                 Button("Open Notebook…") { state.chooseNotebook() }.keyboardShortcut("o")
                 Button("Open Slides or PDF…") { state.chooseDeck() }.keyboardShortcut("o", modifiers: [.command, .shift])
                 Button("Load Notebook URL…") { state.promptForURL() }.keyboardShortcut("l")
+                Button("Open Notebooks Folder in JupyterLab") { state.openWorkspace() }.keyboardShortcut("n", modifiers: [.command, .shift])
                 if !state.bundledNotebookNames.isEmpty {
                     Divider()
                     Menu("Bundled Notebooks") {
@@ -85,9 +116,9 @@ struct NotebookDeckApp: App {
                 Button("Restart Jupyter Server") { state.restartServer() }
                 Button("Set Jupyter Executable…") { state.chooseJupyterExecutable() }
                 Button("Show Jupyter Log") { state.showLog() }
-                Divider()
-                Button("Restart Ollama") { state.restartOllama() }
-                Button("Show Ollama Log") { state.showOllamaLog() }
+                Button("Check Python Environment…") { state.checkDependencies(); state.showEnvironment() }
+                Button("Audit Bundled Runtime…") { state.runFullAudit() }
+                Button("Show App Log") { NSWorkspace.shared.open(AppLog.url) }
             }
             CommandGroup(after: .sidebar) {
                 Divider()
@@ -109,5 +140,10 @@ struct NotebookDeckApp: App {
                 Toggle("Continuous Scroll", isOn: $state.continuousSlides)
             }
         }
+
+        Window("Models", id: "models") {
+            ModelsView().environmentObject(state)
+        }
+        .defaultSize(width: 760, height: 860)
     }
 }

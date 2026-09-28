@@ -4,18 +4,22 @@
 #
 #   Runtime/python        relocatable CPython 3.12 (python-build-standalone, via uv)
 #                         + numpy scipy matplotlib jupyterlab requests torch transformers
+#                         + ipywidgets (the prompt box in the ch03 lab; the runtime sets
+#                           PYTHONNOUSERSITE=1, so a --user install on the host is invisible
+#                           to the kernel and it has to be staged here)
 #   Runtime/ollama        official Ollama macOS CLI tarball (universal binary + ggml/MLX libs)
-#   Runtime/models/ollama qwen2.5:0.5b and qwen2.5:3b, copied from ~/.ollama/models
 #   Runtime/models/hf     Hugging Face cache with distilbert-base-uncased (ch02 lab)
 #
-# Requires: uv (https://docs.astral.sh/uv/), curl, and an Ollama install that has
-# already pulled the two models (`ollama pull qwen2.5:0.5b`, `ollama pull qwen2.5:3b`).
+# No Ollama models are staged: the app downloads the course models (Resources/course_models.json)
+# from the Models window, and build.sh leaves Runtime/models/ollama out of the app.
+#
+# Requires: uv (https://docs.astral.sh/uv/) and curl.
 set -euo pipefail
 cd "$(dirname "$0")"
 R="$PWD/Runtime"
 PYVER=${PYVER:-3.12.13}
 OLLAMA_VER=${OLLAMA_VER:-v0.33.3}
-OLLAMA_MODELS_TO_BUNDLE=(qwen2.5:0.5b qwen2.5:3b)
+OLLAMA_MODELS_TO_BUNDLE=()      # none: build.sh does not copy Runtime/models/ollama into the app
 HF_MODELS=(distilbert-base-uncased)
 
 mkdir -p "$R"
@@ -32,8 +36,13 @@ fi
 [[ -e "$R/python/bin/python" ]] || ln -s python3 "$R/python/bin/python"
 PY="$R/python/bin/python3"
 "$PY" -m pip install --quiet --upgrade pip
-"$PY" -m pip install --quiet "numpy>=1.24" "scipy>=1.10" "matplotlib>=3.7" "jupyterlab>=4.0" \
-    "requests>=2.28" "torch>=2.0" "transformers>=4.40"
+if [[ -f requirements-lock.txt && -z "${UPGRADE:-}" ]]; then
+    "$PY" -m pip install --quiet -r requirements-lock.txt      # the exact versions that were tested
+else
+    "$PY" -m pip install --quiet --upgrade "numpy>=1.24" "scipy>=1.10" "matplotlib>=3.7" "jupyterlab>=4.0" \
+        "requests>=2.28" "torch>=2.0" "transformers>=4.40" "ipywidgets>=8.0"
+    "$PY" -m pip freeze --exclude-editable > requirements-lock.txt
+fi
 
 if [[ ! -x "$R/ollama/ollama" ]]; then
     echo "== Ollama $OLLAMA_VER"
@@ -45,24 +54,14 @@ if [[ ! -x "$R/ollama/ollama" ]]; then
 fi
 
 echo "== Ollama models"
-"$PY" - "$R/models/ollama" "${OLLAMA_MODELS_TO_BUNDLE[@]}" <<'PYEOF'
-import json, os, shutil, sys
-dst = sys.argv[1]; home = os.path.expanduser("~/.ollama/models")
-for spec in sys.argv[2:]:
-    name, tag = spec.split(":")
-    mf = f"{home}/manifests/registry.ollama.ai/library/{name}/{tag}"
-    if not os.path.exists(mf):
-        sys.exit(f"{spec} is not pulled locally; run: ollama pull {spec}")
-    os.makedirs(f"{dst}/manifests/registry.ollama.ai/library/{name}", exist_ok=True)
-    os.makedirs(f"{dst}/blobs", exist_ok=True)
-    shutil.copy2(mf, f"{dst}/manifests/registry.ollama.ai/library/{name}/{tag}")
-    m = json.load(open(mf))
-    for layer in m["layers"] + [m["config"]]:
-        b = layer["digest"].replace(":", "-")
-        if not os.path.exists(f"{dst}/blobs/{b}"):
-            shutil.copy2(f"{home}/blobs/{b}", f"{dst}/blobs/{b}")
-    print("  bundled", spec)
-PYEOF
+if (( ${#OLLAMA_MODELS_TO_BUNDLE[@]} )); then
+    echo "OLLAMA_MODELS_TO_BUNDLE must stay empty: build.sh does not copy Runtime/models/ollama into the app." >&2
+    exit 1
+fi
+echo "  none bundled; the Models window downloads the course models"
+if [[ -d "$R/models/ollama" ]]; then
+    echo "  $R/models/ollama is left from an earlier staging and is not copied into the app; delete it to free $(du -sh "$R/models/ollama" | cut -f1 | tr -d " ")."
+fi
 
 echo "== Hugging Face models"
 mkdir -p "$R/models/hf/hub"
@@ -77,4 +76,12 @@ for m in "${HF_MODELS[@]}"; do
     echo "  bundled $m"
 done
 
+echo "== manifest"
+{
+  echo "NotebookDeck bundled runtime (macOS arm64), generated $(date -u +%Y-%m-%dT%H:%MZ)"; echo
+  echo "Python: $("$PY" --version)"; echo "Ollama: $("$R/ollama/ollama" --version 2>/dev/null | tail -1 | sed 's/.*version is //')"; echo
+  echo "Ollama models:"; echo "  none bundled (Models > Manage Models… downloads the course models)"; echo
+  echo "Hugging Face models:"; for d in "$R"/models/hf/hub/models--*; do echo "  $(basename $d | sed 's/^models--//; s/--/\//g')"; done; echo
+  echo "Python packages ($(ls -d "$R"/python/lib/python3.*/site-packages/*.dist-info | wc -l | tr -d ' ')):"; "$PY" -m pip freeze | sed 's/^/  /'
+} > "$R/MANIFEST.txt"
 echo "Runtime staged: $(du -sh "$R" | cut -f1)"

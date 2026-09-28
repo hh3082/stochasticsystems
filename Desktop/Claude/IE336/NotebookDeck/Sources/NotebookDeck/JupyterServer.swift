@@ -70,6 +70,14 @@ final class JupyterServer {
         return comps.url
     }
 
+    /// The JupyterLab workspace (file browser) at the server root.
+    var labURL: URL? {
+        guard let base = baseURL else { return nil }
+        var comps = URLComponents(url: base.appendingPathComponent(frontend == .lab ? "lab" : "tree"), resolvingAgainstBaseURL: false)!
+        comps.queryItems = [URLQueryItem(name: "token", value: token)]
+        return comps.url
+    }
+
     func serves(_ file: URL) -> Bool {
         guard isRunning, let root = rootDir else { return false }
         return file.path.hasPrefix(root.path + "/")
@@ -120,11 +128,11 @@ final class JupyterServer {
         return (line?.hasPrefix("/") ?? false) ? line : nil
     }
 
-    private static func run(_ exe: URL, _ args: [String]) -> (Int32, String) {
+    private static func run(_ exe: URL, _ args: [String], env: [String: String]? = nil) -> (Int32, String) {
         let p = Process()
         p.executableURL = exe
         p.arguments = args
-        p.environment = childEnvironment(for: exe)
+        p.environment = env ?? childEnvironment(for: exe)
         let pipe = Pipe()
         p.standardOutput = pipe
         p.standardError = pipe
@@ -265,6 +273,92 @@ final class JupyterServer {
         token = ""
         try? logHandle?.close()
         logHandle = nil
+    }
+
+    /// Packages every lab needs (the book's requirements.txt plus requirements-finetune.txt),
+    /// and ipywidgets with its JupyterLab extension for the prompt box in the ch03 lab.
+    static let requiredModules = ["numpy", "scipy", "matplotlib", "requests", "jupyterlab", "ipykernel", "torch", "transformers",
+                                  "ipywidgets", "jupyterlab_widgets"]
+
+    struct DependencyReport {
+        var versions: [String: String] = [:]
+        var missing: [String] = []
+        var ok: Bool { missing.isEmpty }
+        var summary: String {
+            ok ? "Python deps OK" : "Python deps missing: \(missing.joined(separator: ", "))"
+        }
+    }
+
+    /// Imports every required package in the launcher's Python. Doubles as a warm-up: the
+    /// first `import torch` in a kernel is seconds faster once the files are in the disk cache.
+    static func checkDependencies() -> DependencyReport {
+        var report = DependencyReport()
+        guard let launcher = resolveLauncher() else { report.missing = requiredModules; return report }
+        let python: URL
+        var args: [String]
+        if launcher.label == "bundled" {
+            python = launcher.exe
+        } else {
+            // System jupyter: ask the shebang's interpreter, falling back to python3 on PATH.
+            let first = (try? String(contentsOf: launcher.exe, encoding: .utf8))?.split(separator: "\n").first ?? ""
+            let she = first.hasPrefix("#!") ? String(first.dropFirst(2)).trimmingCharacters(in: .whitespaces) : "/usr/bin/env python3"
+            python = URL(fileURLWithPath: she.split(separator: " ").first.map(String.init) ?? "/usr/bin/env")
+        }
+        let script = """
+        import importlib, json, sys
+        out = {}
+        for m in sys.argv[1:]:
+            try:
+                mod = importlib.import_module(m)
+                out[m] = getattr(mod, "__version__", "ok")
+            except Exception as e:
+                out[m] = "MISSING: " + type(e).__name__
+        print(json.dumps(out))
+        """
+        args = ["-c", script] + requiredModules
+        let (status, out) = run(python, args, env: launcher.env)
+        AppLog.write("deps: \(python.path) exit=\(status) \(out.split(separator: "\n").last ?? "")")
+        guard status == 0, let line = out.split(separator: "\n").last, let data = line.data(using: .utf8),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: String] else {
+            report.missing = ["(could not run Python: \(out.suffix(200)))"]
+            return report
+        }
+        for m in requiredModules {
+            let v = dict[m] ?? "MISSING"
+            if v.hasPrefix("MISSING") { report.missing.append(m) } else { report.versions[m] = v }
+        }
+        return report
+    }
+
+    /// Runs Resources/runtime_check.py under the bundled Python: every installed package must
+    /// import, and nothing may come from outside the bundle. Returns the report text.
+    static func fullAudit() -> String {
+        guard let launcher = resolveLauncher(), launcher.label == "bundled",
+              let script = Bundle.main.url(forResource: "runtime_check", withExtension: "py") else {
+            return "The full audit needs the bundled runtime."
+        }
+        let (status, out) = run(launcher.exe, ["-I", script.path], env: launcher.env)
+        guard status == 0, let line = out.split(separator: "\n").last, let data = line.data(using: .utf8),
+              let r = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return "Audit failed to run:\n\(out.suffix(400))"
+        }
+        var lines = ["Python \(r["python"] ?? "?") at \(r["prefix"] ?? "?")",
+                     "\(r["distributions"] ?? 0) packages installed, \(r["imported"] ?? 0) modules imported"]
+        let failures = r["failures"] as? [[String: String]] ?? []
+        let outsidePath = r["outside_path"] as? [String] ?? []
+        let outsideMods = r["outside_modules"] as? [String] ?? []
+        if failures.isEmpty && outsidePath.isEmpty && outsideMods.isEmpty {
+            lines.append(""); lines.append("Everything imports, and nothing is loaded from outside the app.")
+        } else {
+            for f in failures { lines.append("FAILED \(f["distribution"] ?? "") / \(f["module"] ?? ""): \(f["error"] ?? "")") }
+            if !outsidePath.isEmpty { lines.append("sys.path outside the app: \(outsidePath.joined(separator: ", "))") }
+            if !outsideMods.isEmpty { lines.append("modules from outside the app: \(outsideMods.prefix(5).joined(separator: ", "))") }
+        }
+        if let m = try? String(contentsOf: launcher.exe.deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("MANIFEST.txt"), encoding: .utf8) {
+            lines.append(""); lines.append(m.split(separator: "\n").prefix(12).joined(separator: "\n"))
+        }
+        AppLog.write("audit: \(line)")
+        return lines.joined(separator: "\n")
     }
 
     static func logTail(lines: Int = 15) -> String {
