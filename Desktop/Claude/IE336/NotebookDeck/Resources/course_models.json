@@ -1,5 +1,5 @@
 [
   {"name": "qwen2.5:0.5b", "source": "hf.co/purdue-ie336/qwen2.5-0.5b-instruct-GGUF:Q4_K_M", "size": 397807936},
   {"name": "qwen2.5:3b", "source": "hf.co/purdue-ie336/qwen2.5-3b-instruct-GGUF:Q4_K_M", "size": 1929903008},
-  {"name": "qwen2.5-3b-distilled", "source": "hf.co/purdue-ie336/qwen2.5-3b-irreducibility-GGUF:Q8_0", "size": 3285475712}
+  {"name": "qwen2.5-3b-distilled", "source": "hf.co/purdue-ie336/qwen2.5-3b-irreducibility-GGUF:Q6_K", "size": 2538158464}
 ]

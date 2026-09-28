@@ -5,8 +5,9 @@
 # Contents/Resources/runtime, making the app self-contained: Python, Jupyter, the
 # notebook packages, Ollama, and the distilbert weights of the ch02 lab. Ollama models
 # are not bundled: Runtime/models/ollama, if an earlier stage_runtime.sh left one, is
-# not copied, and students download the course models listed in
-# Resources/course_models.json from the Models window. NOTEBOOKS_DIR (default: the
+# not copied, and students download the course models from the Models window, which
+# reads their list from Hugging Face and falls back to the saved copy, then to
+# Resources/course_models.json (copied below). NOTEBOOKS_DIR (default: the
 # StochMod book's notebooks folder) is copied to Contents/Resources/notebooks.
 #
 # The bundle is written to ~/Applications (override with APP_DIR). This folder is

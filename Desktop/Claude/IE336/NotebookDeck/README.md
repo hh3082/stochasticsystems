@@ -33,12 +33,12 @@ machine already has. `build.sh` copies the notebooks from the StochMod book's
 | CPython 3.12 (python-build-standalone) with numpy, scipy, matplotlib, jupyterlab, requests, torch, transformers, ipywidgets | `Contents/Resources/runtime/python` | 1.3 GB |
 | Ollama 0.33.3 command-line server (official tarball) | `Contents/Resources/runtime/ollama` | 0.5 GB |
 | `distilbert-base-uncased` (chapter 2 fine-tune) | `Contents/Resources/runtime/models/hf` | 0.3 GB |
-| The course model list (`course_models.json`) | `Contents/Resources` | tiny |
+| The fallback course model list (`course_models.json`) | `Contents/Resources` | tiny |
 | The lab notebooks | `Contents/Resources/notebooks` | tiny |
 
 The app comes to about 2.1 GB. The course models are downloaded into the per-user store
 instead: `qwen2.5:0.5b` (0.4 GB), `qwen2.5:3b` (1.9 GB) and `qwen2.5-3b-distilled`
-(3.3 GB, the chapter 5 lab).
+(2.5 GB, the chapter 5 lab).
 
 ## Use
 
@@ -90,12 +90,47 @@ instead: `qwen2.5:0.5b` (0.4 GB), `qwen2.5:3b` (1.9 GB) and `qwen2.5-3b-distille
   which frees the files that only the old model used; if the copy over `NAME` fails, `NAME`
   keeps the old model. The repos carry Ollama's `template` and `system` files (the
   distilled model's repo has a `params` file too), so these models need no chat-format step.
-  Each step is logged in `app.log`. The list lives in `Resources/course_models.json`
-  (fields `name`, `source`, `size` in bytes), which `build.sh` copies into
-  `Contents/Resources`; the app reads it once and falls back to the same list compiled into
-  `CourseModels.swift` when the file is missing or malformed (for instance a size above
-  1 TB, or one model listed twice). It is never fetched from the network. To change the
-  list, edit both.
+  Each step is logged in `app.log`.
+* **The course model list.** The rows come from `course_models.json` in the Hugging Face
+  dataset [purdue-ie336/course-models](https://huggingface.co/datasets/purdue-ie336/course-models),
+  so editing that one file changes the list in every copy of the app, without a rebuild.
+  Each time the Models window refreshes, the app fetches
+  `https://huggingface.co/datasets/purdue-ie336/course-models/resolve/main/course_models.json`
+  without cookies, cache or stored credentials, allowing 5 seconds and reading at most
+  64 KB. The window opens at launch unless "Show this window when NotebookDeck opens" is
+  turned off; the list is then fetched when the window is first opened, and until then the
+  toolbar's list of missing models uses the saved or built-in list. The fetch follows a
+  redirect only to an https address on huggingface.co or one of its subdomains (Hugging Face
+  redirects the file to `/api/resolve-cache/...` on the same host), and any other redirect
+  stops it. The file must be strict JSON (UTF-8 without a byte-order mark, with no trailing
+  commas, comments or other extensions): an array of 1 to 50 objects with the fields `name`
+  (the name notebooks ask Ollama for, valid for Ollama and not starting with `-`), `source`
+  (the repo to pull, `hf.co/purdue-ie336/REPO` or `hf.co/purdue-ie336/REPO:TAG`, where REPO
+  and TAG consist of letters, digits, `.`, `_` and `-` and start with a letter, digit or
+  `_`, so the list cannot point outside the course's organization) and `size` (the GGUF
+  size in bytes, an integer from 1 to 200,000,000,000 written without a fraction or
+  exponent, so `1e3` and `1000.0` are refused). No key may appear twice in an entry. No
+  name may appear twice, and no name may equal the source of any entry, its own or
+  another's, since a download pulls the source under the source's name and then deletes
+  that name. Names are compared as Ollama compares them, ignoring case and a `:latest` tag.
+  Other fields are ignored, so a field added later, such as a `note`, does not break older
+  copies of the app.
+  A list that passes these checks replaces the rows and is saved to
+  `~/Library/Application Support/NotebookDeck/course_models.json`. When the fetch fails or
+  the list fails a check, the app uses that saved copy if it exists and passes the checks.
+  Otherwise it uses the list built into the app, `Contents/Resources/course_models.json`
+  (which `build.sh` copies from `Resources/course_models.json`), or, when that file is
+  missing or fails a check, the same list compiled into `CourseModels.swift`. The window
+  never waits for the network. It shows the saved or built-in list at once and swaps in the
+  fetched one when it arrives; a list that arrives while a download (or another operation of
+  the window) runs takes effect when it ends. The rows' statuses and the toolbar's list of
+  missing models follow the list in use. Once the first fetch has returned, a caption under
+  the rows reads "List from Hugging Face", "Saved list (offline)" or "List built into the
+  app"; it is hidden before then, since the list shown at launch says nothing about the
+  network. "Saved list (offline)" also appears when Hugging Face answers with a list that
+  fails a check. `app.log` records which list is in use and why. To change the list for everyone, edit the file on Hugging Face. To change the
+  fallback as well, edit `Resources/course_models.json` and `CourseModels.builtIn`, then
+  rebuild.
 * **Adding other models.** The table below the course models lists what the running
   server has, with parameter count, quantization, and size. Type a name from
   [ollama.com/library](https://ollama.com/library) (for example `llama3.2:1b` or
@@ -167,7 +202,8 @@ never written to.
 ## Everything is inside the app
 
 The application depends on nothing installed on the machine beyond macOS itself; the
-course models are the one thing it downloads after installation, from the Models window.
+course models, and the short list that names them, are the only things it downloads after
+installation, from the Models window.
 This is checked, not assumed:
 
 * `File > Audit Bundled Runtime…` imports the top-level module of all 268 installed

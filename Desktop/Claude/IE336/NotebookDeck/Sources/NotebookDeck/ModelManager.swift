@@ -14,7 +14,16 @@ final class ModelManager: ObservableObject {
     @Published var serverLabel = "Ollama is not running"
     @Published var storeLabel = ""
     @Published var pullName = ""
-    @Published var busy = false
+    /// True while an operation (a download, an import, a lookup) runs. When it turns false, a
+    /// course list that arrived meanwhile takes effect.
+    @Published var busy = false {
+        didSet {
+            if !busy, let list = pendingList {
+                pendingList = nil
+                useCourseList(list)
+            }
+        }
+    }
     @Published var progressText = ""
     @Published var progressFraction: Double? = nil
     @Published var message: String?
@@ -30,8 +39,15 @@ final class ModelManager: ObservableObject {
     // Download a GGUF from a link
     @Published var linkInput = ""
 
-    /// The models the lab notebooks use, from course_models.json in the bundle.
-    let courseModels = CourseModels.current
+    /// The models the lab notebooks use: the saved or built-in list at first, then the list
+    /// from Hugging Face once a refresh has fetched it (CourseModels).
+    @Published private(set) var courseModels: [CourseModel]
+    /// Where `courseModels` came from, for the caption under the rows.
+    @Published private(set) var courseListOrigin: CourseModels.Origin
+    /// False until the outcome of this session's first fetch of the course list is shown. The
+    /// caption stays hidden until then: the list shown at launch says nothing about the
+    /// network, so "Saved list (offline)" would be wrong while the first fetch is under way.
+    @Published private(set) var courseListChecked = false
 
     /// Receives the toolbar's Ollama status line after each refresh.
     var onStatus: ((String) -> Void)?
@@ -40,11 +56,21 @@ final class ModelManager: ObservableObject {
     private var current: Task<Void, Never>?
     /// Numbers each pull, so progress reports that arrive after it ended are dropped.
     private var pullSerial = 0
+    /// The fetch of the course list under way, if any.
+    private var listFetch: Task<Void, Never>?
+    /// A course list that arrived while an operation ran; it takes effect when the operation ends.
+    private var pendingList: CourseModels.Choice?
+    /// The server part of the last status line, kept so the line can be redone for a new list.
+    private var statusBase: String?
+
     init(server: OllamaServer) {
         self.server = server
+        courseModels = CourseModels.atLaunch.list
+        courseListOrigin = CourseModels.atLaunch.origin
     }
 
     func refresh() async {
+        fetchCourseList()
         refreshing += 1
         defer { refreshing -= 1 }
         let status = await server.ensureRunning()
@@ -62,7 +88,57 @@ final class ModelManager: ObservableObject {
         let list = await OllamaServer.models()
         models = (list ?? []).sorted { $0.name < $1.name }
         modelsKnown = list != nil
+        statusBase = status
         onStatus?(OllamaServer.statusLine(status, installed: list?.map(\.name)))
+    }
+
+    /// Fetches the course list from `url` (Hugging Face; tests pass another address) without
+    /// holding up the window or the refresh: the rows keep their list until the fetch returns,
+    /// and CourseModels.choose then picks the fetched, saved or built-in list. One fetch runs at
+    /// a time; the task returned is the one under way.
+    @discardableResult
+    func fetchCourseList(from url: URL = CourseModels.remoteURL) -> Task<Void, Never>? {
+        if let listFetch { return listFetch }
+        let task = Task {
+            let fetched: Result<Data, Error>
+            do { fetched = .success(try await CourseModels.fetch(url)) } catch { fetched = .failure(error) }
+            let choice = CourseModels.choose(fetched: fetched)
+            listFetch = nil
+            offerCourseList(choice)
+        }
+        listFetch = task
+        return task
+    }
+
+    /// Shows `choice` at once, or, while an operation such as a download runs, when it ends.
+    private func offerCourseList(_ choice: CourseModels.Choice) {
+        pendingList = nil
+        guard choice.list != courseModels || choice.origin != courseListOrigin else {
+            courseListChecked = true
+            return
+        }
+        if busy {
+            pendingList = choice
+            AppLog.write("course models: an operation is running; the new list takes effect when it ends")
+        } else {
+            useCourseList(choice)
+        }
+    }
+
+    /// Makes `choice` the list of the rows and of the toolbar's status line. The rows' statuses
+    /// follow, since they come from the installed models and not from the list. While a
+    /// refresh runs, the toolbar line is left to it: the refresh ends by setting the line from
+    /// its own server status and CourseModels.current, whereas `statusBase` is from the
+    /// refresh before and may be out of date (e.g. after Restart Ollama).
+    private func useCourseList(_ choice: CourseModels.Choice) {
+        CourseModels.setCurrent(choice.list)
+        courseModels = choice.list
+        courseListOrigin = choice.origin
+        courseListChecked = true
+        AppLog.write("course models: the Models window now lists \(choice.list.map(\.name).joined(separator: ", ")) (\(choice.origin.caption))")
+        if let statusBase, refreshing == 0 {
+            onStatus?(OllamaServer.statusLine(statusBase, installed: modelsKnown ? models.map(\.name) : nil))
+        }
     }
 
     /// Runs one model operation at a time behind the progress row, then refreshes the list.
@@ -258,6 +334,14 @@ final class ModelManager: ObservableObject {
         var confirmed: Set<String> = []
         if isInstalled(c) {
             guard confirmReplace(c) else { return }
+            // Main-actor tasks run while this dialog is open, so a new course list may have
+            // taken effect meanwhile. Download only an entry the list still has as the dialog
+            // described it (same name, source and size).
+            guard courseModels.contains(c) else {
+                AppLog.write("course models: the list changed while replacing \(c.name) was being confirmed; not downloaded")
+                message = "The course list changed while the dialog was open, so \(c.name) was not downloaded. Check its row and try again."
+                return
+            }
             AppLog.write("course models: replacing the installed \(c.name), as confirmed")
             confirmed.insert(c.name)
         }
@@ -724,6 +808,11 @@ struct ModelsView: View {
                         Button("Download All") { mm.downloadAllCourseModels() }
                             .disabled(mm.busy || !mm.modelsKnown || mm.courseModels.allSatisfy { mm.isInstalled($0) })
                     }
+                    // Kept in the layout while hidden, so the window does not shift when it appears.
+                    Text(mm.courseListOrigin.caption)
+                        .font(.caption).foregroundStyle(.tertiary)
+                        .opacity(mm.courseListChecked ? 1 : 0)
+                        .accessibilityHidden(!mm.courseListChecked)
                 }
                 .padding(4)
             }
