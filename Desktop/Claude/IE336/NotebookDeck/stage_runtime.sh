@@ -8,10 +8,10 @@
 #                           PYTHONNOUSERSITE=1, so a --user install on the host is invisible
 #                           to the kernel and it has to be staged here)
 #   Runtime/ollama        official Ollama macOS CLI tarball (universal binary + ggml/MLX libs)
-#   Runtime/models/hf     Hugging Face cache with distilbert-base-uncased (ch02 lab)
 #
-# No Ollama models are staged: the app downloads the course models (Resources/course_models.json)
-# from the Models window, and build.sh leaves Runtime/models/ollama out of the app.
+# No models are staged: the app downloads the course models (Resources/course_models.json)
+# from the Models window, the ch02 lab downloads distilbert-base-uncased on first use into a
+# per-user cache, and build.sh leaves any Runtime/models out of the app.
 #
 # ARCH=x86_64 stages the Intel runtime into ./Runtime-x86_64 instead (ARCH=x86_64 ./build.sh
 # copies it into the Intel app). It differs from the default (ARCH=arm64) in three ways:
@@ -39,7 +39,7 @@ esac
 PYVER=${PYVER:-3.12.13}
 OLLAMA_VER=${OLLAMA_VER:-v0.33.3}
 OLLAMA_MODELS_TO_BUNDLE=()      # none: build.sh does not copy Runtime/models/ollama into the app
-HF_MODELS=(distilbert-base-uncased)
+HF_MODELS=()                    # none: the ch02 lab downloads distilbert on first use
 
 mkdir -p "$R"
 
@@ -124,8 +124,9 @@ if [[ -d "$R/models/ollama" ]]; then
 fi
 
 echo "== Hugging Face models"
-mkdir -p "$R/models/hf/hub"
-if [[ "$ARCH" == x86_64 && -d Runtime/models/hf/hub ]]; then
+(( ${#HF_MODELS} )) || echo "  none staged; the ch02 lab downloads distilbert-base-uncased on first use"
+(( ${#HF_MODELS} )) && mkdir -p "$R/models/hf/hub"
+if (( ${#HF_MODELS} )) && [[ "$ARCH" == x86_64 && -d Runtime/models/hf/hub ]]; then
     # The cache the arm64 app ships; the weights and tokenizer files do not depend on the architecture.
     # xet/ holds only hf_xet's logs, which build.sh leaves out of the app.
     rsync -a --exclude '.locks' --exclude '/xet/' Runtime/models/hf/ "$R/models/hf/"
@@ -153,7 +154,7 @@ esac
   echo "NotebookDeck bundled runtime ($DESC), generated $(date -u +%Y-%m-%dT%H:%MZ)"; echo
   echo "Python: $("${RUN[@]}" "$PY" --version)"; echo "Ollama: $("${RUN[@]}" "$R/ollama/ollama" --version 2>/dev/null | tail -1 | sed 's/.*version is //')"; echo
   echo "Ollama models:"; echo "  none bundled (Models > Manage Models… downloads the course models)"; echo
-  echo "Hugging Face models:"; for d in "$R"/models/hf/hub/models--*; do echo "  $(basename $d | sed 's/^models--//; s/--/\//g')"; done; echo
+  echo "Hugging Face models:"; echo "  none bundled (the ch02 lab downloads distilbert-base-uncased on first use)"; echo
   echo "Python packages ($(ls -d "$R"/python/lib/python3.*/site-packages/*.dist-info | wc -l | tr -d ' ')):"; "${RUN[@]}" "$PY" -m pip freeze | sed 's/^/  /'
 } > "$R/MANIFEST.txt"
 echo "Runtime staged: $(du -sh "$R" | cut -f1)"

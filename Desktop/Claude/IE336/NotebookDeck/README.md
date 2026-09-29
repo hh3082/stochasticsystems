@@ -2,10 +2,10 @@
 
 A macOS app that shows a live Jupyter notebook and a slide deck side by side in one
 window, for lecture demos. Built self-contained, it also carries what the IE 336 lab
-notebooks need: Python, the packages, Ollama, and the distilbert weights of the chapter 2
-lab. The Qwen models that the other labs ask Ollama for are not bundled; students download
-them once from the Models window (Models > Manage Models…, "Course models"). No other
-install steps on the presenting machine.
+notebooks need: Python, the packages and Ollama. No models are bundled. Students download
+the Qwen models that the labs ask Ollama for once from the Models window (Models > Manage
+Models…, "Course models"), and the chapter 2 lab downloads the distilbert weights it
+fine-tunes the first time it runs. No other install steps on the presenting machine.
 
 ## Build
 
@@ -13,7 +13,7 @@ Needs only the Xcode Command Line Tools (no Xcode.app). To build the self-contai
 version you also need `uv`.
 
 ```bash
-./stage_runtime.sh   # once: downloads Python + packages + Ollama and the distilbert cache (~2 GB into ./Runtime)
+./stage_runtime.sh   # once: downloads Python + packages + Ollama (~1.8 GB into ./Runtime)
 ./build.sh           # writes ~/Applications/NotebookDeck.app
 ```
 
@@ -52,13 +52,12 @@ differ from the arm64 lock, and why:
 | debugpy | 1.8.16 | 1.8.21 | later releases are built for macOS 15 only |
 
 The ch02 lab's training code (`AutoTokenizer`, `AutoModelForSequenceClassification` loaded
-offline from the bundled cache, one `torch.optim.AdamW` step) runs with these versions on a
+from a Hugging Face cache, one `torch.optim.AdamW` step) runs with these versions on a
 toy batch. pip installs wheels only, and only wheels built for macOS 14 or earlier. It
 downloads them with `--platform macosx_14_0_x86_64` and installs from that folder alone.
 `UPGRADE=1` re-resolves the lock within these pins.
 
-Ollama and the distilbert cache are copied from `./Runtime` when it is staged; otherwise the
-script downloads them. The Ollama binaries are universal. The `mlx_metal_v4` folder is left
+Ollama is copied from `./Runtime` when it is staged; otherwise the script downloads it. The Ollama binaries are universal. The `mlx_metal_v4` folder is left
 out, because its libraries are arm64 only (Metal 4 needs Apple silicon). The x86_64 Ollama
 has no Metal backend, so on an Intel Mac the course models run on the CPU (the Ollama log
 reports `library=cpu`); expect slower answers than on Apple silicon.
@@ -68,7 +67,7 @@ Command Line Tools suffice), copies `./Runtime-x86_64` into the bundle, and writ
 `~/Library/Caches/NotebookDeck-intel` unless `APP_DIR` is set, so it never replaces the
 arm64 app in `~/Applications`. It then checks every Mach-O file that `sign_and_notarize.sh`
 signs, and stops if one has no x86_64 code or needs a macOS newer than the app's minimum
-(14.0). The Intel app comes to about 1.9 GB. Students with Apple silicon Macs should get
+(14.0). The Intel app comes to about 1.7 GB. Students with Apple silicon Macs should get
 the arm64 app.
 
 ## What is inside the self-contained app
@@ -77,13 +76,14 @@ the arm64 app.
 |---|---|---|
 | CPython 3.12 (python-build-standalone) with numpy, scipy, matplotlib, jupyterlab, requests, torch, transformers, ipywidgets | `Contents/Resources/runtime/python` | 1.3 GB |
 | Ollama 0.33.3 command-line server (official tarball) | `Contents/Resources/runtime/ollama` | 0.5 GB |
-| `distilbert-base-uncased` (chapter 2 fine-tune) | `Contents/Resources/runtime/models/hf` | 0.3 GB |
 | The fallback course model list (`course_models.json`) | `Contents/Resources` | tiny |
 | The lab notebooks | `Contents/Resources/notebooks` | tiny |
 
-The app comes to about 2.1 GB. The course models are downloaded into the per-user store
-instead: `qwen2.5:0.5b` (0.4 GB), `qwen2.5:3b` (1.9 GB) and `qwen2.5-3b-distilled`
-(2.5 GB, the chapter 5 lab).
+The app comes to about 1.8 GB. The course models are downloaded into the per-user store
+instead: `qwen2.5:0.5b` (0.4 GB), `qwen2.5:3b` (1.9 GB) and `qwen2.5-3b-markov-classes`
+(2.5 GB, the chapter 5 lab). The chapter 2 lab downloads `distilbert-base-uncased` (0.3 GB)
+into `~/Library/Application Support/NotebookDeck/hf` the first time it runs; the app points
+`HF_HOME` there, so the kernels never use the host's own Hugging Face cache.
 
 ## Use
 
@@ -109,7 +109,7 @@ instead: `qwen2.5:0.5b` (0.4 GB), `qwen2.5:3b` (1.9 GB) and `qwen2.5-3b-distille
   store from an earlier version, into which the bundled `qwen2.5:0.5b` and `qwen2.5:3b` were
   copied, is used as it is, and those two models show as installed. With either server, the
   toolbar names the course models it lacks, e.g. "Ollama: bundled, course models missing:
-  qwen2.5-3b-distilled (Models > Manage Models…)".
+  qwen2.5-3b-markov-classes (Models > Manage Models…)".
 * **Course models.** The Models window opens in front of the main window each time the app starts, so students can check which course models are installed and download the missing ones first; the checkbox "Show this window when NotebookDeck opens" at the bottom of the window turns this off. Models > Manage Models… (⇧⌘M) opens the Models window at any time. Its first
   section, "Course models", has one row per model the labs use: the name notebooks ask for,
   its size, its status, and a Download button; "Download All" fetches every row that is not
@@ -134,7 +134,7 @@ instead: `qwen2.5:0.5b` (0.4 GB), `qwen2.5:3b` (1.9 GB) and `qwen2.5-3b-distille
   model to `NAME-replaced`, copies the download over `NAME`, and deletes `NAME-replaced`,
   which frees the files that only the old model used; if the copy over `NAME` fails, `NAME`
   keeps the old model. The repos carry Ollama's `template` and `system` files (the
-  distilled model's repo has a `params` file too), so these models need no chat-format step.
+  markov-classes model's repo has a `params` file too), so these models need no chat-format step.
   Each step is logged in `app.log`.
 * **The course model list.** The rows come from `course_models.json` in the Hugging Face
   dataset [purdue-ie336/course-models](https://huggingface.co/datasets/purdue-ie336/course-models),

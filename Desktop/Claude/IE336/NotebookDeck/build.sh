@@ -3,11 +3,11 @@
 #
 # If ./Runtime exists (see stage_runtime.sh) it is copied into the bundle as
 # Contents/Resources/runtime, making the app self-contained: Python, Jupyter, the
-# notebook packages, Ollama, and the distilbert weights of the ch02 lab. Ollama models
-# are not bundled: Runtime/models/ollama, if an earlier stage_runtime.sh left one, is
-# not copied, and students download the course models from the Models window, which
-# reads their list from Hugging Face and falls back to the saved copy, then to
-# Resources/course_models.json (copied below). NOTEBOOKS_DIR (default: the
+# notebook packages and Ollama. No models are bundled: Runtime/models, if an earlier
+# stage_runtime.sh left one, is not copied. Students download the course models from the
+# Models window, which reads their list from Hugging Face and falls back to the saved copy,
+# then to Resources/course_models.json (copied below); the ch02 lab downloads distilbert on
+# first use into a per-user cache. NOTEBOOKS_DIR (default: the
 # StochMod book's notebooks folder) is copied to Contents/Resources/notebooks.
 #
 # The bundle is written to ~/Applications (override with APP_DIR). This folder is
@@ -55,18 +55,18 @@ if [[ ! -d "$RUNTIME" && -z "${ALLOW_SLIM:-}" ]]; then
 fi
 if [[ -d "$RUNTIME" ]]; then
     echo "Syncing runtime into bundle…"
-    # models/ollama stays out, and so does models/hf/xet, which holds only the logs hf_xet wrote
-    # while the runtime was staged (the app sends them to HF_XET_CACHE in Application Support).
+    # models/ stays out: neither Ollama nor Hugging Face models are bundled.
     # --delete-excluded removes the copies an earlier build put in the bundle.
-    rsync -a --delete --delete-excluded --exclude '/models/ollama/' --exclude '/models/hf/xet/' \
+    rsync -a --delete --delete-excluded --exclude '/models/' \
         "$RUNTIME/" "$APP/Contents/Resources/runtime/"
-    if [[ -d "$RUNTIME/models/ollama" ]]; then
-        echo "Left out $RUNTIME/models/ollama ($(du -sh "$RUNTIME/models/ollama" | cut -f1 | tr -d " ")): Ollama models are not bundled; delete it to free the space."
+    if [[ -d "$RUNTIME/models" ]]; then
+        echo "Left out $RUNTIME/models ($(du -sh "$RUNTIME/models" | cut -f1 | tr -d " ")): models are not bundled; delete it to free the space."
     fi
     # A manifest staged before the models were unbundled still lists them; the bundle's copy says none are.
     M="$APP/Contents/Resources/runtime/MANIFEST.txt"
     if [[ -f "$M" ]]; then
         awk '/^Ollama models:/ { print "Ollama models:"; print "  none bundled (Models > Manage Models… downloads the course models)"; skip = 1; next }
+             /^Hugging Face models:/ { print "Hugging Face models:"; print "  none bundled (the ch02 lab downloads distilbert-base-uncased on first use)"; skip = 1; next }
              skip && /^$/ { skip = 0 }
              !skip' "$M" > "$M.tmp" && mv "$M.tmp" "$M"
     fi

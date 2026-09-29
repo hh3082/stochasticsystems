@@ -10,7 +10,6 @@ enum BundledRuntime {
     static let root: URL? = existing(Bundle.main.resourceURL?.appendingPathComponent("runtime", isDirectory: true))
     static let python: URL? = existing(root?.appendingPathComponent("python/bin/python3"))
     static let ollama: URL? = existing(root?.appendingPathComponent("ollama/ollama"))
-    static let hfHome: URL? = existing(root?.appendingPathComponent("models/hf", isDirectory: true))
     static let bundledNotebooks: URL? = existing(Bundle.main.resourceURL?.appendingPathComponent("notebooks", isDirectory: true))
 
     static var isAvailable: Bool { python != nil }
@@ -86,7 +85,8 @@ enum BundledRuntime {
         var env = ProcessInfo.processInfo.environment
         for k in ["PYTHONPATH", "PYTHONHOME", "PYTHONSTARTUP", "PYTHONUSERBASE", "VIRTUAL_ENV",
                   "CONDA_PREFIX", "CONDA_DEFAULT_ENV", "JUPYTER_PATH", "JUPYTER_TOKEN",
-                  "HF_HUB_CACHE", "TRANSFORMERS_CACHE", "OLLAMA_MODELS"] {
+                  "HF_HOME", "HF_HUB_CACHE", "TRANSFORMERS_CACHE", "HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE",
+                  "OLLAMA_MODELS"] {
             env.removeValue(forKey: k)
         }
         var path = ["/usr/bin", "/bin", "/usr/sbin", "/sbin"]
@@ -108,13 +108,10 @@ enum BundledRuntime {
         env["JUPYTER_RUNTIME_DIR"] = sub("jupyter/runtime")
         env["IPYTHONDIR"] = sub("ipython")
         env["MPLCONFIGDIR"] = sub("matplotlib")
-        if let hf = hfHome {
-            env["HF_HOME"] = hf.path
-            env["HF_HUB_OFFLINE"] = "1"
-            env["TRANSFORMERS_OFFLINE"] = "1"
-            // hf_xet writes its logs under $HF_XET_CACHE, which defaults to $HF_HOME/xet (inside the bundle).
-            env["HF_XET_CACHE"] = sub("hf-xet")
-        }
+        // No Hugging Face models are bundled: a lab that needs one (the ch02 lab's distilbert)
+        // downloads it on first use into this writable per-user cache, outside the signed bundle.
+        env["HF_HOME"] = sub("hf")
+        env["HF_XET_CACHE"] = sub("hf-xet")
         env["OLLAMA_HOST"] = "127.0.0.1:\(OllamaServer.port)"
         return env
     }
