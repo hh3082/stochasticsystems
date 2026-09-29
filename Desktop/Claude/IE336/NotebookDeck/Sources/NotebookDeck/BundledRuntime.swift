@@ -95,6 +95,9 @@ enum BundledRuntime {
         env["PATH"] = path.joined(separator: ":")
         env["PYTHONNOUSERSITE"] = "1"
         env["PYTHONUNBUFFERED"] = "1"
+        // The bundle is signed and must never change. stage_runtime.sh compiles every module in
+        // advance; this keeps Python from writing a .pyc into the app if one is ever missing.
+        env["PYTHONDONTWRITEBYTECODE"] = "1"
         let sub = { (name: String) -> String in
             let d = supportDir.appendingPathComponent(name, isDirectory: true)
             try? fm.createDirectory(at: d, withIntermediateDirectories: true)
@@ -109,6 +112,8 @@ enum BundledRuntime {
             env["HF_HOME"] = hf.path
             env["HF_HUB_OFFLINE"] = "1"
             env["TRANSFORMERS_OFFLINE"] = "1"
+            // hf_xet writes its logs under $HF_XET_CACHE, which defaults to $HF_HOME/xet (inside the bundle).
+            env["HF_XET_CACHE"] = sub("hf-xet")
         }
         env["OLLAMA_HOST"] = "127.0.0.1:\(OllamaServer.port)"
         return env

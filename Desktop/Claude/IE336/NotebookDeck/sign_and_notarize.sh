@@ -11,12 +11,14 @@
 # Usage:  ./sign_and_notarize.sh                  # auto-detects the Developer ID identity
 #         ./sign_and_notarize.sh --dry-run        # only lists what would be signed
 #         IDENTITY="Developer ID Application: Name (TEAMID)" PROFILE=NotebookDeck ./sign_and_notarize.sh
+#         APP=~/Library/Caches/NotebookDeck-intel/NotebookDeck.app OUT=~/NotebookDeck-releases/NotebookDeck-mac-intel.zip \
+#             ./sign_and_notarize.sh                  # the Intel build (ARCH=x86_64 ./build.sh)
 set -euo pipefail
 cd "$(dirname "$0")"
 APP=${APP:-"$HOME/Applications/NotebookDeck.app"}
 PROFILE=${PROFILE:-NotebookDeck}
 ENT="$PWD/Resources/entitlements.plist"
-OUT="$HOME/Desktop/NotebookDeck-mac.zip"
+OUT=${OUT:-"$HOME/NotebookDeck-releases/NotebookDeck-mac.zip"}   # outside the iCloud-synced Desktop
 DRY=${1:-}
 
 [[ -d "$APP" ]] || { echo "No app at $APP; run ./build.sh first." >&2; exit 1; }
@@ -74,5 +76,10 @@ rm -f "$OUT"
 # --norsrc --noextattr --noqtn: no AppleDouble "._" metadata entries. Archive Utility folds
 # those back into attributes, but other unzippers leave them as files inside the bundle,
 # which breaks the code seal and makes Gatekeeper report the app as "damaged".
+mkdir -p "$(dirname "$OUT")"
 ditto -c -k --keepParent --norsrc --noextattr --noqtn "$APP" "$OUT"
-echo "Done: $OUT ($(du -sh "$OUT" | cut -f1)) — notarized, opens on any Apple silicon Mac with macOS 14+ without warnings."
+ARCHS=" $(lipo -archs "$APP/Contents/MacOS/NotebookDeck") "
+if [[ "$ARCHS" == *" arm64 "* && "$ARCHS" == *" x86_64 "* ]]; then MACS="Mac"
+elif [[ "$ARCHS" == *" x86_64 "* ]]; then MACS="Intel Mac"
+else MACS="Apple silicon Mac"; fi
+echo "Done: $OUT ($(du -sh "$OUT" | cut -f1)) — notarized, opens on any $MACS with macOS 14+ without warnings."

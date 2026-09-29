@@ -26,6 +26,51 @@ Without `./Runtime` the build is a 1 MB app that uses whatever `jupyter` and Oll
 machine already has. `build.sh` copies the notebooks from the StochMod book's
 `notebooks/` folder (override with `NOTEBOOKS_DIR=...`).
 
+## Intel build
+
+A separate app for Intel Macs (x86_64, macOS 14 or later) is built from the same sources
+with `ARCH=x86_64`. It has the same features as the Apple silicon app.
+
+```bash
+ARCH=x86_64 ./stage_runtime.sh   # once: x86_64 Python + packages into ./Runtime-x86_64 (~1.9 GB)
+ARCH=x86_64 ./build.sh           # writes ~/Library/Caches/NotebookDeck-intel/NotebookDeck.app
+```
+
+`stage_runtime.sh` installs the x86_64 build of CPython 3.12 and runs its pip under Rosetta,
+so on an Apple silicon Mac it needs Rosetta 2. The packages come from
+`requirements-lock-x86_64.txt`, whose versions are set by PyTorch. torch 2.2.2 is the last
+PyTorch release with macOS x86_64 wheels, and it is built against numpy 1.x. The pins that
+differ from the arm64 lock, and why:
+
+| Package | Intel lock | arm64 lock | Reason |
+|---|---|---|---|
+| torch | 2.2.2 | 2.14.0 | last PyTorch with macOS x86_64 wheels |
+| numpy | 1.26.4 | 2.5.2 | torch 2.2.2 is built against numpy 1.x |
+| transformers | 5.0.0 | 5.16.1 | transformers 5.1 and later require torch 2.4 or later |
+| tokenizers | 0.22.2 | 0.23.2 | transformers 5.0.0 accepts tokenizers up to 0.23.0 |
+| scipy | 1.17.1 | 1.18.1 | scipy 1.18 requires numpy 2 |
+| debugpy | 1.8.16 | 1.8.21 | later releases are built for macOS 15 only |
+
+The ch02 lab's training code (`AutoTokenizer`, `AutoModelForSequenceClassification` loaded
+offline from the bundled cache, one `torch.optim.AdamW` step) runs with these versions on a
+toy batch. pip installs wheels only, and only wheels built for macOS 14 or earlier. It
+downloads them with `--platform macosx_14_0_x86_64` and installs from that folder alone.
+`UPGRADE=1` re-resolves the lock within these pins.
+
+Ollama and the distilbert cache are copied from `./Runtime` when it is staged; otherwise the
+script downloads them. The Ollama binaries are universal. The `mlx_metal_v4` folder is left
+out, because its libraries are arm64 only (Metal 4 needs Apple silicon). The x86_64 Ollama
+has no Metal backend, so on an Intel Mac the course models run on the CPU (the Ollama log
+reports `library=cpu`); expect slower answers than on Apple silicon.
+
+With `ARCH=x86_64`, `build.sh` compiles the Swift code for x86_64 in `.build-x86_64` (the
+Command Line Tools suffice), copies `./Runtime-x86_64` into the bundle, and writes to
+`~/Library/Caches/NotebookDeck-intel` unless `APP_DIR` is set, so it never replaces the
+arm64 app in `~/Applications`. It then checks every Mach-O file that `sign_and_notarize.sh`
+signs, and stops if one has no x86_64 code or needs a macOS newer than the app's minimum
+(14.0). The Intel app comes to about 1.9 GB. Students with Apple silicon Macs should get
+the arm64 app.
+
 ## What is inside the self-contained app
 
 | Piece | Where | Size |
@@ -196,8 +241,12 @@ The bundled Jupyter and its kernels run with `PYTHONNOUSERSITE=1`, no `PYTHONPAT
 their own `JUPYTER_DATA_DIR` / `JUPYTER_CONFIG_DIR` / `IPYTHONDIR` / `MPLCONFIGDIR` under
 `~/Library/Application Support/NotebookDeck`, so nothing from the machine's own
 Python, conda, or Jupyter setup leaks in. Hugging Face runs offline against the bundled
-cache (`HF_HUB_OFFLINE=1`). Ollama serves from the per-user store; the bundle itself is
-never written to.
+cache (`HF_HUB_OFFLINE=1`), and hf_xet keeps its logs in `HF_XET_CACHE` under Application
+Support. Ollama serves from the per-user store. The bundle itself is never written to:
+pip compiles the packages it installs, `stage_runtime.sh` compiles the standard library
+(unchecked hash-based `.pyc` files, valid whatever modification times a copy leaves),
+and the app sets `PYTHONDONTWRITEBYTECODE=1`, so Python never adds a `__pycache__` file
+to the signed app.
 
 ## Everything is inside the app
 
@@ -207,7 +256,7 @@ installation, from the Models window.
 This is checked, not assumed:
 
 * `File > Audit Bundled Runtime…` imports the top-level module of all 268 installed
-  Python packages under an isolated interpreter (`python -I`) and confirms that `sys.path`
+  Python packages under an isolated interpreter (`python -I -B`) and confirms that `sys.path`
   and every loaded module lie inside the app. The same script, `Resources/runtime_check.py`,
   can be run by hand.
 * At build time, `otool -L` over the 288 native binaries in the bundle shows no link to
@@ -245,15 +294,22 @@ Then, after every `./build.sh`:
 
 It signs all ~290 binaries inside the bundle and the app itself with the hardened runtime
 and the entitlements in `Resources/entitlements.plist`, uploads the app to Apple's notary
-service, waits for the ticket, staples it, and writes `~/Desktop/NotebookDeck-mac.zip`,
+service, waits for the ticket, staples it, and writes `~/NotebookDeck-releases/NotebookDeck-mac.zip` (outside the iCloud-synced Desktop),
 which opens on any Apple silicon Mac with macOS 14+ with no prompts. The zip is written
 without AppleDouble metadata so it survives any unzipper; a zip made with plain
 `ditto -c -k` verifies only when unpacked by Archive Utility, and otherwise produces the
 "NotebookDeck is damaged and can't be opened" error. `--dry-run` only
 lists what would be signed. Notarization of the 2 GB upload typically takes 15–60 minutes.
 
+The Intel app is signed the same way and goes into its own zip, which `OUT` names:
+
+```bash
+APP=~/Library/Caches/NotebookDeck-intel/NotebookDeck.app OUT=~/NotebookDeck-releases/NotebookDeck-mac-intel.zip ./sign_and_notarize.sh
+```
+
 Without this, the app is ad-hoc signed: it runs here, but a downloaded copy needs System
-Settings > Privacy & Security > Open Anyway on each Mac. Apple silicon only either way.
+Settings > Privacy & Security > Open Anyway on each Mac. `NotebookDeck-mac.zip` needs an
+Apple silicon Mac; Intel Macs get `NotebookDeck-mac-intel.zip`.
 
 ## Troubleshooting
 

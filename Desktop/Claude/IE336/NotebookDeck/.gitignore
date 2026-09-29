@@ -1,3 +1,16 @@
 .build/
 build/
 Runtime/
+Runtime-x86_64/
+.build-x86_64/
+
+# symlinks into ~/Library/Caches/NotebookDeck-runtime (kept off the iCloud-synced Desktop) and the old copies
+/Runtime
+/Runtime-x86_64
+/.build
+/.build-x86_64
+*.old-icloud/
+
+# Finder metadata and hand-made backups
+.DS_Store
+*.bak

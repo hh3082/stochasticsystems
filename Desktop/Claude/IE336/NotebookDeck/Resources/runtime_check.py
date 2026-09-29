@@ -1,6 +1,6 @@
 """Full audit of the bundled Python: import the top-level module of every installed
 distribution under an isolated interpreter and confirm nothing is resolved from outside
-the bundle. Run with `python -I runtime_check.py`; prints one JSON object."""
+the bundle. Run with `python -I -B runtime_check.py`; prints one JSON object."""
 import importlib, importlib.metadata as md, json, os, sys, warnings
 
 warnings.filterwarnings("ignore")

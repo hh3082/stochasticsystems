@@ -33,7 +33,7 @@ enum CourseModels {
     static let builtIn: [CourseModel] = [
         CourseModel(name: "qwen2.5:0.5b", source: "hf.co/purdue-ie336/qwen2.5-0.5b-instruct-GGUF:Q4_K_M", size: 397_807_936),
         CourseModel(name: "qwen2.5:3b", source: "hf.co/purdue-ie336/qwen2.5-3b-instruct-GGUF:Q4_K_M", size: 1_929_903_008),
-        CourseModel(name: "qwen2.5-3b-distilled", source: "hf.co/purdue-ie336/qwen2.5-3b-irreducibility-GGUF:Q6_K", size: 2_538_158_464),
+        CourseModel(name: "qwen2.5-3b-distilled", source: "hf.co/purdue-ie336/qwen2.5-3b-markov-classes-GGUF:Q6_K", size: 2_538_158_464),
     ]
 
     static let fileName = "course_models.json"

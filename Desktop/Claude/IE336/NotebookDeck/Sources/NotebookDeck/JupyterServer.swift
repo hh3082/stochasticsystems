@@ -337,7 +337,8 @@ final class JupyterServer {
               let script = Bundle.main.url(forResource: "runtime_check", withExtension: "py") else {
             return "The full audit needs the bundled runtime."
         }
-        let (status, out) = run(launcher.exe, ["-I", script.path], env: launcher.env)
+        // -I ignores PYTHONDONTWRITEBYTECODE along with the other PYTHON* variables, so -B says it again.
+        let (status, out) = run(launcher.exe, ["-I", "-B", script.path], env: launcher.env)
         guard status == 0, let line = out.split(separator: "\n").last, let data = line.data(using: .utf8),
               let r = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             return "Audit failed to run:\n\(out.suffix(400))"
